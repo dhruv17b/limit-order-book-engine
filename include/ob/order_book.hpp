@@ -71,6 +71,51 @@ return trades;
 
         
     }
+    std::vector<Trade> add_market_order(Order order){
+        std::vector<Trade> trades;
+
+        if(order.side== Side::Buy){
+            while(order.quantity > 0 && !asks_.empty()){
+                auto best = asks_.begin();
+                auto& level = best->second;
+                while(order.quantity > 0 && !level.empty()){
+                    Order& resting = level.front();
+                    uint64_t fill = std::min(order.quantity, resting.quantity);
+
+                    trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+
+                    order.quantity -= fill;
+                    resting.quantity -= fill;
+
+                    if(resting.quantity == 0)
+                        level.pop_front();
+                }
+                if(level.empty())
+                    asks_.erase(best);
+            }
+        }
+        else {
+            while(order.quantity > 0 && !bids_.empty()){
+                auto best = bids_.begin();
+                auto& level = best->second;
+                while(order.quantity > 0 && !level.empty()){
+                    Order& resting = level.front();
+                    uint64_t fill = std::min(order.quantity, resting.quantity);
+
+                    trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+
+                    order.quantity -= fill;
+                    resting.quantity -= fill;
+
+                    if(resting.quantity == 0)
+                        level.pop_front();
+                }
+                if(level.empty())
+                    bids_.erase(best);
+            }
+        }
+        return trades;
+    }
 
 private:
     // Bids: highest price first.  Asks: lowest price first.
