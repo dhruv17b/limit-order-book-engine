@@ -42,3 +42,13 @@ TEST(Matching, PartialFillRestRemainder){
     EXPECT_EQ(trades[0].price, 100);
     EXPECT_EQ(trades[0].quantity, 8u);
 }
+TEST(Matching, NoCross){
+    OrderBook book;
+
+    book.add_limit_order(Order{1, Side::Sell, OrderType::Limit, 100, 5, 1});
+
+    std::vector<Trade> trades =
+        book.add_limit_order(Order{2, Side::Buy, OrderType::Limit, 99, 5, 2});
+
+    EXPECT_EQ(trades.size(), 0u);
+}
