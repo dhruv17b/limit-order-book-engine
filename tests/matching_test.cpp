@@ -67,3 +67,15 @@ TEST(Matching,MarketOrder){
     EXPECT_EQ(trades[0].price, 100);
     EXPECT_EQ(trades[0].quantity, 6u);
 }
+TEST(Matching, CancelRemovesRestingOrder){
+    OrderBook book;
+
+    book.add_limit_order(Order{1, Side::Sell, OrderType::Limit, 100, 10, 1});
+    EXPECT_TRUE(book.cancel_order(1)); // found and removed
+    EXPECT_FALSE(book.cancel_order(999)); // no such order
+
+    std::vector<Trade> trades =
+        book.add_limit_order(Order{2, Side::Buy, OrderType::Limit, 100, 10, 2});
+
+    EXPECT_EQ(trades.size(), 0u);
+}

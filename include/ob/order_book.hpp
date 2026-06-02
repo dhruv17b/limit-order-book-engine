@@ -5,6 +5,7 @@
 #include <functional>
 #include "ob/types.hpp"
 #include <algorithm>
+#include <unordered_map>
 
 class OrderBook {
 public:
@@ -31,6 +32,7 @@ public:
             resting.quantity -= fill;
 
             if (resting.quantity == 0)
+                index_.erase(resting.id);              // remove from index
                 level.pop_front();               // fully filled, remove it
         }
 
@@ -38,8 +40,11 @@ public:
             asks_.erase(best);                   // clean up the empty price level
     }
 
-    if (order.quantity > 0)
-        bids_[order.price].push_back(order);     // remainder rests on the book
+    if (order.quantity > 0){
+        auto& level = bids_[order.price];
+        level.push_back(order);
+        index_[order.id] = Locator{Side::Buy, order.price, std::prev(level.end())};
+    }
 }
 else {  // Side::Sell
     while (order.quantity > 0 && !bids_.empty()) {
@@ -57,6 +62,7 @@ else {  // Side::Sell
             resting.quantity -= fill;
 
             if (resting.quantity == 0)
+                index_.erase(resting.id);              // remove from index
                 level.pop_front();
         }
 
@@ -64,8 +70,11 @@ else {  // Side::Sell
             bids_.erase(best);
     }
 
-    if (order.quantity > 0)
-        asks_[order.price].push_back(order);     // remainder rests on the ask side
+    if (order.quantity > 0){
+        auto& level = asks_[order.price];
+        level.push_back(order);
+        index_[order.id] = Locator{Side::Sell, order.price, std::prev(level.end())};
+    }
 }
 return trades;
 
@@ -88,6 +97,7 @@ return trades;
                     resting.quantity -= fill;
 
                     if(resting.quantity == 0)
+                        index_.erase(resting.id);              // remove from index
                         level.pop_front();
                 }
                 if(level.empty())
@@ -108,6 +118,7 @@ return trades;
                     resting.quantity -= fill;
 
                     if(resting.quantity == 0)
+                        index_.erase(resting.id);
                         level.pop_front();
                 }
                 if(level.empty())
@@ -116,9 +127,36 @@ return trades;
         }
         return trades;
     }
+    bool cancel_order(uint64_t order_id){
+        auto found = index_.find(order_id);
+        if(found == index_.end())
+            return false; // order not found
+        Locator loc = found->second;
+
+        if(loc.side == Side::Buy){
+            auto& level = bids_[loc.price];
+            level.erase(loc.it);
+            if(level.empty())
+                bids_.erase(loc.price);
+        }
+        else {
+            auto& level = asks_[loc.price];
+            level.erase(loc.it);
+            if(level.empty())
+                asks_.erase(loc.price);
+        }
+        index_.erase(order_id);
+        return true;
+    }
 
 private:
     // Bids: highest price first.  Asks: lowest price first.
+    struct Locator {
+        Side side;
+        int64_t price;
+        std::list<Order>::iterator it;
+    };
+    std::unordered_map<uint64_t, Locator> index_; // order ID -> location in the book
     std::map<int64_t, std::list<Order>, std::greater<int64_t>> bids_;
     std::map<int64_t, std::list<Order>, std::less<int64_t>>    asks_;
 };
