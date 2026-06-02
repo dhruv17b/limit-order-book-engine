@@ -79,3 +79,25 @@ TEST(Matching, CancelRemovesRestingOrder){
 
     EXPECT_EQ(trades.size(), 0u);
 }
+TEST(Matching, TimePriorityWithingPriceLevel){
+    OrderBook book;
+     book.add_limit_order(Order{1, Side::Sell, OrderType::Limit, 100, 5, 1});
+     book.add_limit_order(Order{2, Side::Sell, OrderType::Limit, 100, 5, 2});
+
+     std::vector<Trade> trades =
+         book.add_limit_order(Order{3, Side::Buy, OrderType::Limit, 100, 8, 3});
+
+         ASSERT_EQ(trades.size(), 2u);
+         EXPECT_EQ(trades[0].maker_order_id, 1u);
+         EXPECT_EQ(trades[0].quantity, 5u);
+         EXPECT_EQ(trades[1].maker_order_id, 2u);
+         EXPECT_EQ(trades[1].quantity, 3u);
+}
+TEST(Matching, MarketOrderEmptyBook){
+    OrderBook book;
+
+    std::vector<Trade> trades =
+        book.add_market_order(Order{1, Side::Buy, OrderType::Market, 0, 10, 1});
+
+    EXPECT_EQ(trades.size(), 0u);
+}
