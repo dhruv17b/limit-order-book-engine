@@ -101,3 +101,20 @@ TEST(Matching, MarketOrderEmptyBook){
 
     EXPECT_EQ(trades.size(), 0u);
 }
+TEST(Matching, IOC){
+    OrderBook book;
+    
+    book.add_limit_order(Order{1, Side::Sell, OrderType::Limit, 100, 5, 1});
+    std::vector<Trade> ioc_trades =
+     book.add_limit_order(Order{2, Side::Buy, OrderType::IOC, 100, 8, 2});
+    ASSERT_EQ(ioc_trades.size(), 1u);
+    EXPECT_EQ(ioc_trades[0].maker_order_id, 1u);
+    EXPECT_EQ(ioc_trades[0].taker_order_id, 2u);
+    EXPECT_EQ(ioc_trades[0].price, 100);
+    EXPECT_EQ(ioc_trades[0].quantity, 5u);
+
+    std::vector<Trade> follow_up = 
+    book.add_limit_order(Order{3, Side::Sell, OrderType::Limit, 100, 3, 3});
+
+    EXPECT_EQ(follow_up.size(), 0u);
+}

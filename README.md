@@ -3,7 +3,7 @@
 A from-scratch limit order book and matching engine in C++, built to understand
 how exchanges match orders and to practice low-latency systems design.
 
-## Status (Week 1)
+## Status (Till now)
 - Limit orders with price-time priority matching (both sides)
 - Market orders (fill at any price, no resting remainder)
 - Cancel by order id, backed by an order-id index for O(1) lookup

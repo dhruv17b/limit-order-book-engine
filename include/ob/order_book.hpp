@@ -40,7 +40,7 @@ public:
             asks_.erase(best);                   // clean up the empty price level
     }
 
-    if (order.quantity > 0){
+    if (order.quantity > 0 && order.type == OrderType::Limit){
         auto& level = bids_[order.price];
         level.push_back(order);
         index_[order.id] = Locator{Side::Buy, order.price, std::prev(level.end())};
@@ -70,7 +70,7 @@ else {  // Side::Sell
             bids_.erase(best);
     }
 
-    if (order.quantity > 0){
+    if (order.quantity > 0 && order.type == OrderType::Limit){
         auto& level = asks_[order.price];
         level.push_back(order);
         index_[order.id] = Locator{Side::Sell, order.price, std::prev(level.end())};
