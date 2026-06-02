@@ -27,3 +27,18 @@ TEST(Matching, CrossesAsksByPriceTimePriority) {
     EXPECT_EQ(trades[1].price, 101);
     EXPECT_EQ(trades[1].quantity, 2u);
 }
+TEST(Matching, PartialFillRestRemainder){
+    OrderBook book;
+
+    book.add_limit_order(Order{1, Side::Sell, OrderType::Limit, 100, 8, 1});
+
+    std::vector<Trade> trades =
+        book.add_limit_order(Order{2, Side::Buy, OrderType::Limit, 100, 20, 2});
+    
+    ASSERT_EQ(trades.size(), 1u);
+    
+    EXPECT_EQ(trades[0].maker_order_id, 1u);
+    EXPECT_EQ(trades[0].taker_order_id, 2u);
+    EXPECT_EQ(trades[0].price, 100);
+    EXPECT_EQ(trades[0].quantity, 8u);
+}
