@@ -13,6 +13,8 @@ public:
     // Any unfilled remainder rests on the book.
     std::vector<Trade> add_limit_order(Order order) {
         std::vector<Trade> trades;
+        if(order.type==OrderType::FOK && available_quantity(order) < order.quantity)
+            return trades;
 
         // TODO — this is what you write.
         //
@@ -159,4 +161,29 @@ private:
     std::unordered_map<uint64_t, Locator> index_; // order ID -> location in the book
     std::map<int64_t, std::list<Order>, std::greater<int64_t>> bids_;
     std::map<int64_t, std::list<Order>, std::less<int64_t>>    asks_;
+    // Count how much quantity is available to fully fill `order` at crossing prices.
+// Stops early once enough is found. Does NOT modify the book.
+uint64_t available_quantity(const Order& order) {
+    uint64_t total = 0;
+
+    if (order.side == Side::Buy) {
+        for (auto& [price, level] : asks_) {     // asks low-to-high
+            if (price > order.price) break;       // stops crossing — done
+            for (auto& resting : level) {
+                total += resting.quantity;
+                if (total >= order.quantity) return total;  // enough, stop early
+            }
+        }
+    } else {
+        for (auto& [price, level] : bids_) {      // bids high-to-low
+            if (price < order.price) break;        // stops crossing — done
+            for (auto& resting : level) {
+                total += resting.quantity;
+                if (total >= order.quantity) return total;
+            }
+        }
+    }
+
+    return total;
+}
 };

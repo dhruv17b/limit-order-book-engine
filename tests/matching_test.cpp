@@ -118,3 +118,25 @@ TEST(Matching, IOC){
 
     EXPECT_EQ(follow_up.size(), 0u);
 }
+
+TEST(Matching, FOK){
+    OrderBook book;
+    
+    book.add_limit_order(Order{1, Side::Sell, OrderType::Limit, 100, 5, 1});
+    std::vector<Trade> killed =
+     book.add_limit_order(Order{2, Side::Buy, OrderType::FOK, 100, 8, 2});
+    EXPECT_EQ(killed.size(), 0u);
+
+    std::vector<Trade> proof = 
+    book.add_limit_order(Order{3, Side::Buy, OrderType::Limit, 100, 5, 3});
+
+    ASSERT_EQ(proof.size(), 1u);
+    EXPECT_EQ(proof[0].quantity, 5u);
+
+    OrderBook book2;
+    book2.add_limit_order(Order{10, Side::Sell, OrderType::Limit, 100, 10, 10});
+    std::vector<Trade> filled =
+     book2.add_limit_order(Order{11, Side::Buy, OrderType::FOK, 100, 8, 11});
+    ASSERT_EQ(filled.size(), 1u);
+    EXPECT_EQ(filled[0].quantity, 8u);
+}

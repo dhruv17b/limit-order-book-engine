@@ -2,7 +2,7 @@
 #include <cstdint>
 
 enum class Side { Buy, Sell };
-enum class OrderType { Limit, Market, IOC };
+enum class OrderType { Limit, Market, IOC, FOK };
 
 struct Order {
     uint64_t  id;
