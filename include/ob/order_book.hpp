@@ -203,6 +203,39 @@ std::vector<Event> apply(const Command& cmd) {
     return events;
 }
 
+// Returns true if the book's internal invariants all hold.
+bool check_invariants() const {
+    // 1. Book must not cross: best bid < best ask.
+    if (!bids_.empty() && !asks_.empty()) {
+        int64_t best_bid = bids_.begin()->first;
+        int64_t best_ask = asks_.begin()->first;
+        if (best_bid >= best_ask) return false;
+    }
+
+    // 2. Index consistency: every resting order has exactly one index entry,
+    //    and every index entry points to a real resting order.
+    size_t resting_count = 0;
+    for (const auto& [price, level] : bids_) {
+        for (const auto& o : level) {
+            auto it = index_.find(o.id);
+            if (it == index_.end()) return false;          // resting but not indexed
+            if (it->second.side != Side::Buy) return false; // wrong side recorded
+            ++resting_count;
+        }
+    }
+    for (const auto& [price, level] : asks_) {
+        for (const auto& o : level) {
+            auto it = index_.find(o.id);
+            if (it == index_.end()) return false;
+            if (it->second.side != Side::Sell) return false;
+            ++resting_count;
+        }
+    }
+    if (index_.size() != resting_count) return false;       // index has stale entries
+
+    return true;
+}
+
 private:
     // Bids: highest price first.  Asks: lowest price first.
     struct Locator {

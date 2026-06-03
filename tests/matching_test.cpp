@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "ob/order_book.hpp"
+#include<random>
 
 // Scenario: rest a sell of 10 @ 100, then a sell of 5 @ 101.
 // Send a buy of 12 @ 101. Expect:
@@ -171,4 +172,34 @@ TEST(Commands, ApplyProducesEvents) {
     EXPECT_EQ(e2[0].type, EventType::Accepted);
     EXPECT_EQ(e2[1].type, EventType::Trade);
     EXPECT_EQ(e2[1].trade.quantity, 4u);
+}
+
+// Fire many random command sequences; the book's invariants must ALWAYS hold.
+TEST(Property, InvariantsHoldUnderRandomCommands) {
+    std::mt19937 rng(12345);  // fixed seed → reproducible runs
+    std::uniform_int_distribution<int>     side_d(0, 1);
+    std::uniform_int_distribution<int64_t> price_d(95, 105);
+    std::uniform_int_distribution<uint64_t> qty_d(1, 10);
+    std::uniform_int_distribution<int>     action_d(0, 3); // 0-2 new, 3 cancel
+
+    OrderBook book;
+    uint64_t next_id = 1;
+    std::vector<uint64_t> live_ids;  // ids we might try to cancel
+
+    for (int step = 0; step < 5000; ++step) {
+        if (action_d(rng) == 3 && !live_ids.empty()) {
+            // Cancel a previously-seen id (may already be filled — that's fine).
+            uint64_t id = live_ids[rng() % live_ids.size()];
+            book.apply(Command{CommandType::Cancel, {}, id});
+        } else {
+            uint64_t id = next_id++;
+            Side side = side_d(rng) ? Side::Buy : Side::Sell;
+            book.apply(Command{CommandType::New,
+                Order{id, side, OrderType::Limit, price_d(rng), qty_d(rng), id}, 0});
+            live_ids.push_back(id);
+        }
+
+        // After EVERY command, the world must be consistent.
+        ASSERT_TRUE(book.check_invariants()) << "Invariant broke at step " << step;
+    }
 }
