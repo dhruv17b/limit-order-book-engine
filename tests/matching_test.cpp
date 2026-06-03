@@ -140,3 +140,18 @@ TEST(Matching, FOK){
     ASSERT_EQ(filled.size(), 1u);
     EXPECT_EQ(filled[0].quantity, 8u);
 }
+TEST(Matching, ModifyChangesRestingOrder){
+    OrderBook book;
+
+    book.add_limit_order(Order{1, Side::Buy, OrderType::Limit, 100, 5, 1});
+
+    std::vector<Trade> mod_trades = book.modify_order(1, 105, 7);
+    EXPECT_EQ(mod_trades.size(), 0u);
+
+    std::vector<Trade> trades = 
+    book.add_limit_order(Order{2, Side::Sell, OrderType::Limit, 105, 7, 2});
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].maker_order_id, 1u);
+    EXPECT_EQ(trades[0].price, 105);
+    EXPECT_EQ(trades[0].quantity, 7u);
+}

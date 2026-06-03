@@ -151,6 +151,18 @@ return trades;
         return true;
     }
 
+    std::vector<Trade> modify_order(uint64_t order_id, int64_t new_price, uint64_t new_quantity){
+        auto found = index_.find(order_id);
+        if(found==index_.end())return {};
+
+        Side side = found->second.side;
+
+        cancel_order(order_id);
+        Order replacement(order_id, side, OrderType::Limit, new_price, new_quantity, 0);
+
+        return add_limit_order(replacement);
+    }
+
 private:
     // Bids: highest price first.  Asks: lowest price first.
     struct Locator {
