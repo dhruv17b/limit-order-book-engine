@@ -19,3 +19,19 @@ struct Trade {
     int64_t  price;      // the maker's price
     uint64_t quantity;
 };
+
+enum class CommandType { New, Cancel, Modify };
+
+struct Command {
+    CommandType type;
+    Order       order;      // New: the order. Modify: id + new price/qty in here.
+    uint64_t    target_id;  // Cancel / Modify: which existing order.
+};
+
+enum class EventType { Accepted, Rejected, Trade, Canceled };
+
+struct Event {
+    EventType type;
+    Trade     trade;     // meaningful only when type == Trade
+    uint64_t  order_id;  // the order this event is about
+};

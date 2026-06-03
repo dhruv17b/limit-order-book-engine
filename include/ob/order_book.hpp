@@ -162,6 +162,42 @@ return trades;
 
         return add_limit_order(replacement);
     }
+    
+    // The single entry point: one command in, a list of events out.
+std::vector<Event> apply(const Command& cmd) {
+    std::vector<Event> events;
+
+    switch (cmd.type) {
+        case CommandType::New: {
+            std::vector<Trade> trades =
+                (cmd.order.type == OrderType::Market)
+                    ? add_market_order(cmd.order)
+                    : add_limit_order(cmd.order);
+
+            events.push_back(Event{EventType::Accepted, {}, cmd.order.id});
+            for (const Trade& t : trades)
+                events.push_back(Event{EventType::Trade, t, cmd.order.id});
+            break;
+        }
+        case CommandType::Cancel: {
+            bool ok = cancel_order(cmd.target_id);
+            events.push_back(Event{ok ? EventType::Canceled : EventType::Rejected,
+                                   {}, cmd.target_id});
+            break;
+        }
+        case CommandType::Modify: {
+            std::vector<Trade> trades =
+                modify_order(cmd.target_id, cmd.order.price, cmd.order.quantity);
+
+            events.push_back(Event{EventType::Accepted, {}, cmd.target_id});
+            for (const Trade& t : trades)
+                events.push_back(Event{EventType::Trade, t, cmd.target_id});
+            break;
+        }
+    }
+
+    return events;
+}
 
 private:
     // Bids: highest price first.  Asks: lowest price first.

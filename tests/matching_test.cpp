@@ -155,3 +155,20 @@ TEST(Matching, ModifyChangesRestingOrder){
     EXPECT_EQ(trades[0].price, 105);
     EXPECT_EQ(trades[0].quantity, 7u);
 }
+
+// The command/event interface dispatches and reports events correctly.
+TEST(Commands, ApplyProducesEvents) {
+    OrderBook book;
+
+    auto e1 = book.apply(Command{CommandType::New,
+                Order{1, Side::Sell, OrderType::Limit, 100, 10, 1}, 0});
+    ASSERT_EQ(e1.size(), 1u);
+    EXPECT_EQ(e1[0].type, EventType::Accepted);
+
+    auto e2 = book.apply(Command{CommandType::New,
+                Order{2, Side::Buy, OrderType::Limit, 100, 4, 2}, 0});
+    ASSERT_EQ(e2.size(), 2u);                  // Accepted + one Trade
+    EXPECT_EQ(e2[0].type, EventType::Accepted);
+    EXPECT_EQ(e2[1].type, EventType::Trade);
+    EXPECT_EQ(e2[1].trade.quantity, 4u);
+}
