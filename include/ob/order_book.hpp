@@ -33,9 +33,10 @@ public:
             order.quantity   -= fill;
             resting.quantity -= fill;
 
-            if (resting.quantity == 0)
+            if (resting.quantity == 0){
                 index_.erase(resting.id);              // remove from index
                 level.pop_front();               // fully filled, remove it
+            }
         }
 
         if (level.empty())
@@ -63,9 +64,10 @@ else {  // Side::Sell
             order.quantity   -= fill;
             resting.quantity -= fill;
 
-            if (resting.quantity == 0)
+            if (resting.quantity == 0){
                 index_.erase(resting.id);              // remove from index
                 level.pop_front();
+            }
         }
 
         if (level.empty())
@@ -98,9 +100,10 @@ return trades;
                     order.quantity -= fill;
                     resting.quantity -= fill;
 
-                    if(resting.quantity == 0)
+                    if(resting.quantity == 0){
                         index_.erase(resting.id);              // remove from index
                         level.pop_front();
+                    }
                 }
                 if(level.empty())
                     asks_.erase(best);
@@ -119,9 +122,10 @@ return trades;
                     order.quantity -= fill;
                     resting.quantity -= fill;
 
-                    if(resting.quantity == 0)
+                    if(resting.quantity == 0){
                         index_.erase(resting.id);
                         level.pop_front();
+                    }
                 }
                 if(level.empty())
                     bids_.erase(best);
@@ -162,7 +166,7 @@ return trades;
 
         return add_limit_order(replacement);
     }
-    
+
     // The single entry point: one command in, a list of events out.
 std::vector<Event> apply(const Command& cmd) {
     std::vector<Event> events;

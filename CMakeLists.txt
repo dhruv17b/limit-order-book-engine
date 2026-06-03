@@ -19,3 +19,5 @@ target_include_directories(ob_tests PRIVATE include)
 
 include(GoogleTest)
 gtest_discover_tests(ob_tests)
+add_executable(replay src/replay.cpp)
+target_include_directories(replay PRIVATE include)
