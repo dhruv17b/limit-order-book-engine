@@ -39,3 +39,9 @@ ctest --test-dir build --output-on-failure
 - Measured before any optimization; The next phase targets improving this.
 - Latency per command (same run): p50 120 ns, p99 721 ns, p99.9 2483 ns, max ~2.1 ms
 - The large p50→tail spread points to heap allocation stalls — the next phase target.
+
+## Profiled bottlenecks(Current phase)
+- cancel_order is the hottest function (~28% self time) under cancel-heavy flow.
+- Dominated by std::unordered_map (the order-id index) lookups/erases.
+- Per-command std::vector<Event> allocation is a second major cost.
+- These are the next phase optimization targets.
