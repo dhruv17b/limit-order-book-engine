@@ -1,3 +1,6 @@
 build/
 replay_debug
 build-release/
+build-profile/
+perf.data
+build-profile/

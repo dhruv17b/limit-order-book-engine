@@ -3,6 +3,7 @@
 #include <vector>
 #include <iostream>
 #include "ob/order_book.hpp"
+#include <algorithm>
 
 int main() {
     const int N = 1'000'000;   // number of commands to run
@@ -50,6 +51,29 @@ int main() {
     std::cout << "Ran " << N << " commands in " << seconds << " s\n";
     std::cout << "Throughput: " << (per_sec / 1e6) << " million orders/sec\n";
     std::cout << "(produced " << total_events << " events)\n";
+    // --- Latency measurement: time each command individually ---
+    std::vector<double> latencies_ns;
+    latencies_ns.reserve(N);
+
+    OrderBook book2;
+    for (const auto& cmd : commands) {
+        auto t0 = std::chrono::steady_clock::now();
+        book2.apply(cmd);
+        auto t1 = std::chrono::steady_clock::now();
+        latencies_ns.push_back(
+            std::chrono::duration<double, std::nano>(t1 - t0).count());
+    }
+
+    std::sort(latencies_ns.begin(), latencies_ns.end());
+    auto pct = [&](double p) {
+        return latencies_ns[(size_t)(p / 100.0 * (latencies_ns.size() - 1))];
+    };
+
+    std::cout << "\nLatency per command:\n";
+    std::cout << "  p50:   " << pct(50)   << " ns\n";
+    std::cout << "  p99:   " << pct(99)   << " ns\n";
+    std::cout << "  p99.9: " << pct(99.9) << " ns\n";
+    std::cout << "  max:   " << latencies_ns.back() << " ns\n";
 
     return 0;
 }
