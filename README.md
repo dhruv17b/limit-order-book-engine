@@ -39,6 +39,9 @@ ctest --test-dir build --output-on-failure
 - Measured before any optimization; The next phase targets improving this.
 - Latency per command (same run): p50 120 ns, p99 721 ns, p99.9 2483 ns, max ~2.1 ms
 - The large p50→tail spread points to heap allocation stalls — the next phase target.
+- Flat array index (replacing std::unordered_map): ~2.2M → ~8M commands/sec
+  at 10M-command scale (best of stable runs). Removed per-op hashing and
+  catastrophic rehash stalls. Tradeoff: index memory grows with id range.
 
 ## Profiled bottlenecks(Current phase)
 - cancel_order is the hottest function (~28% self time) under cancel-heavy flow.
