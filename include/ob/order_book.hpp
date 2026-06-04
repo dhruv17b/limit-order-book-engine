@@ -170,6 +170,7 @@ return trades;
     // The single entry point: one command in, a list of events out.
 std::vector<Event> apply(const Command& cmd) {
     std::vector<Event> events;
+    events.reserve(4);
 
     switch (cmd.type) {
         case CommandType::New: {
