@@ -39,6 +39,13 @@ ctest --test-dir build --output-on-failure
 - Measured before any optimization; The next phase targets improving this.
 - Latency per command (same run): p50 120 ns, p99 721 ns, p99.9 2483 ns, max ~2.1 ms
 - The large p50→tail spread points to heap allocation stalls — the next phase target.
+
+## Optimization log
+- Replaced the order-id index (std::unordered_map) with a flat array indexed
+  directly by order id. At 10M-command scale this improved throughput from
+  ~2.2M to ~8M commands/sec (best of stable runs), and removed the large
+  latency stalls caused by hash-table rehashing as the book grew to ~180k
+  resting orders. Tradeoff: index memory now grows with the order-id range.
 - Flat array index (replacing std::unordered_map): ~2.2M → ~8M commands/sec
   at 10M-command scale (best of stable runs). Removed per-op hashing and
   catastrophic rehash stalls. Tradeoff: index memory grows with id range.
