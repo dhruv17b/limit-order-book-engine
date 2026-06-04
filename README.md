@@ -3,7 +3,7 @@
 A from-scratch limit order book and matching engine in C++, built to understand
 how exchanges match orders and to practice low-latency systems design.
 
-## Status (Weeks 1–2 complete)
+## Status (Till now)
 - Limit orders with price-time priority matching (both sides)
 - Market orders (fill at any price, no resting remainder)
 - IOC (immediate-or-cancel): fills what it can, drops the rest
@@ -33,3 +33,7 @@ ctest --test-dir build --output-on-failure
 
 ## Replay a command file
 ./build/replay commands.txt
+
+## Performance baseline (naive std::map/std::list)
+- ~9.3 million commands/sec throughput (1M mixed new+cancel commands, Release build, single thread)
+- Measured before any optimization; The next phase targets improving this.
