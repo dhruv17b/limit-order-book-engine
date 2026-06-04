@@ -37,3 +37,5 @@ ctest --test-dir build --output-on-failure
 ## Performance baseline (naive std::map/std::list)
 - ~9.3 million commands/sec throughput (1M mixed new+cancel commands, Release build, single thread)
 - Measured before any optimization; The next phase targets improving this.
+- Latency per command (same run): p50 120 ns, p99 721 ns, p99.9 2483 ns, max ~2.1 ms
+- The large p50→tail spread points to heap allocation stalls — the next phase target.
