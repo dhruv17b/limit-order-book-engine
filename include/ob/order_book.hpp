@@ -6,9 +6,12 @@
 #include "ob/types.hpp"
 #include <algorithm>
 #include <unordered_map>
+#include<iostream>
 
 class OrderBook {
 public:
+// Diagnostics: how many orders are resting, and how big is the index?
+
     // Match the incoming order against the book; return generated trades.
     // Any unfilled remainder rests on the book.
     std::vector<Trade> add_limit_order(Order order) {
@@ -235,6 +238,13 @@ bool check_invariants() const {
     if (index_.size() != resting_count) return false;       // index has stale entries
 
     return true;
+}
+void print_sizes() const {
+    size_t resting = 0;
+    for (const auto& [p, level] : bids_) resting += level.size();
+    for (const auto& [p, level] : asks_) resting += level.size();
+    std::cout << "resting orders: " << resting
+              << ", index_ size: " << index_.size() << "\n";
 }
 
 private:

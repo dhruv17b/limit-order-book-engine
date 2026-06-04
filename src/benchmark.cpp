@@ -6,7 +6,7 @@
 #include <algorithm>
 
 int main() {
-    const int N = 1'000'000;   // number of commands to run
+    const int N = 10'000'000;   // number of commands to run
 
     // --- Phase 1: generate commands up front (NOT timed) ---
     std::mt19937 rng(42);
@@ -74,6 +74,7 @@ int main() {
     std::cout << "  p99:   " << pct(99)   << " ns\n";
     std::cout << "  p99.9: " << pct(99.9) << " ns\n";
     std::cout << "  max:   " << latencies_ns.back() << " ns\n";
+    book.print_sizes();
 
     return 0;
 }
