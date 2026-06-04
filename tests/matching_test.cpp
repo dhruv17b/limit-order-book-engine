@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "ob/order_book.hpp"
 #include<random>
+#include "ob/order_pool.hpp"
 
 // Scenario: rest a sell of 10 @ 100, then a sell of 5 @ 101.
 // Send a buy of 12 @ 101. Expect:
