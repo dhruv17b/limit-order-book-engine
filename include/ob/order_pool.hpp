@@ -12,6 +12,7 @@ public:
     struct Node {
         Order    order;
         uint32_t next = NIL;   // index of next node in its list (or NIL)
+        uint32_t  prev = NIL;   // index of prev node in its list (or NIL)
     };
 
     // Grab a free slot, store the order in it, return its index.
