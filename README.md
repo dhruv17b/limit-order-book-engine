@@ -58,3 +58,10 @@ ctest --test-dir build --output-on-failure
 - Dominated by std::unordered_map (the order-id index) lookups/erases.
 - Per-command std::vector<Event> allocation is a second major cost.
 - These are the next phase optimization targets.
+
+## Verification
+- Example tests for specific matching scenarios.
+- Property tests: invariants hold across thousands of random command sequences.
+- Differential tests: the optimized engine produces identical output to a simple
+  reference implementation across 20k random operations — proving optimizations
+  preserved behavior exactly.
