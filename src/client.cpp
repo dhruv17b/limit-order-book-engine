@@ -33,6 +33,8 @@ int main() {
         perror("connect"); return 1;
     }
     printf("Connected to server.\n");
+    uint8_t role = 0;
+    write(fd, &role, 1);
 
     // Send a small scenario: rest two sells, then a crossing buy.
     printf("Sending sell 10 @ 100:\n");

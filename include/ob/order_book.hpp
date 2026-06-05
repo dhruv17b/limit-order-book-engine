@@ -111,6 +111,32 @@ OrderBook() {
         return events;
     }
 
+    // Top of book: best bid and best ask prices (0 if that side is empty).
+struct TopOfBook {
+    int64_t best_bid;
+    uint64_t bid_qty;
+    int64_t best_ask;
+    uint64_t ask_qty;
+};
+
+TopOfBook top_of_book() const {
+    TopOfBook t{0, 0, 0, 0};
+    if (!bids_.empty()) {
+        auto it = bids_.begin();
+        t.best_bid = it->first;
+        // sum quantity at best bid level
+        for (uint32_t n = it->second.head; n != OrderPool::NIL; n = pool_[n].next)
+            t.bid_qty += pool_[n].order.quantity;
+    }
+    if (!asks_.empty()) {
+        auto it = asks_.begin();
+        t.best_ask = it->first;
+        for (uint32_t n = it->second.head; n != OrderPool::NIL; n = pool_[n].next)
+            t.ask_qty += pool_[n].order.quantity;
+    }
+    return t;
+}
+
     bool check_invariants() const {
         if (!bids_.empty() && !asks_.empty())
             if (bids_.begin()->first >= asks_.begin()->first) return false;

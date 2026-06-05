@@ -11,6 +11,19 @@
 
 constexpr int PORT = 9001;
 
+// A book-update message: 4 fixed fields (best bid, bid qty, best ask, ask qty).
+// 32 bytes, same size as a command for simplicity.
+void broadcast_top_of_book(const std::vector<int>& subscribers,
+                           const OrderBook::TopOfBook& t) {
+    WireBytes buf{};
+    std::memcpy(&buf[0],  &t.best_bid, 8);
+    std::memcpy(&buf[8],  &t.bid_qty,  8);
+    std::memcpy(&buf[16], &t.best_ask, 8);
+    std::memcpy(&buf[24], &t.ask_qty,  8);
+    for (int fd : subscribers)
+        write(fd, buf.data(), WIRE_SIZE);
+}
+
 int main() {
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) { perror("socket"); return 1; }
@@ -27,6 +40,7 @@ int main() {
 
     OrderBook book;
     std::vector<int> clients;        // connected order-submitter sockets
+    std::vector<int> subscribers;    // clients subscribed to top-of-book updates
 
     while (true) {
         // 1. Build the read set fresh each iteration.
@@ -38,18 +52,30 @@ int main() {
             FD_SET(fd, &readset);
             if (fd > maxfd) maxfd = fd;
         }
+        for (int fd : subscribers) {       // watch subscribers too (for disconnect)
+            FD_SET(fd, &readset);
+            if (fd > maxfd) maxfd = fd;
+        }
 
         // 2. Block until any socket is ready.
         int ready = select(maxfd + 1, &readset, nullptr, nullptr, nullptr);
         if (ready < 0) { perror("select"); break; }
 
-        // 3a. New connection waiting on the listening socket?
         if (FD_ISSET(listen_fd, &readset)) {
             int client_fd = accept(listen_fd, nullptr, nullptr);
             if (client_fd >= 0) {
-                clients.push_back(client_fd);
-                printf("Client connected (fd %d). Total: %zu\n",
-                       client_fd, clients.size());
+                // Read the 1-byte role declaration: 0 = submitter, 1 = subscriber.
+                uint8_t role = 0;
+                ssize_t n = read(client_fd, &role, 1);
+                if (n == 1 && role == 1) {
+                    subscribers.push_back(client_fd);
+                    printf("Subscriber connected (fd %d). Subscribers: %zu\n",
+                           client_fd, subscribers.size());
+                } else {
+                    clients.push_back(client_fd);
+                    printf("Submitter connected (fd %d). Submitters: %zu\n",
+                           client_fd, clients.size());
+                }
             }
         }
 
@@ -79,11 +105,26 @@ int main() {
             std::vector<Event> events = book.apply(cmd);
             uint8_t reply = (uint8_t)events.size();
             write(fd, &reply, 1);
+            broadcast_top_of_book(subscribers, book.top_of_book());
         }
 
         // 4. Remove any disconnected clients from the list.
         for (int fd : to_remove)
             clients.erase(std::remove(clients.begin(), clients.end(), fd), clients.end());
+        std::vector<int> subs_remove;
+        for (int fd : subscribers) {
+            if (!FD_ISSET(fd, &readset)) continue;
+            uint8_t tmp;
+            ssize_t n = read(fd, &tmp, 1);
+            if (n <= 0) {
+                printf("Subscriber (fd %d) disconnected.\n", fd);
+                close(fd);
+                subs_remove.push_back(fd);
+            }
+        }
+        for (int fd : subs_remove)
+            subscribers.erase(std::remove(subscribers.begin(), subscribers.end(), fd),
+                              subscribers.end());
     }
 
     close(listen_fd);
