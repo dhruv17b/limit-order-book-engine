@@ -3,6 +3,7 @@
 #include<random>
 #include "ob/order_pool.hpp"
 #include "ob/simple_order_book.hpp"
+#include "ob/protocol.hpp"
 
 // Scenario: rest a sell of 10 @ 100, then a sell of 5 @ 101.
 // Send a buy of 12 @ 101. Expect:
@@ -254,4 +255,33 @@ TEST(Differential, OptimizedMatchesReference) {
                 << "Event " << i << " differs at step " << step;
         }
     }
+}
+
+// Serialize then deserialize must reproduce the original command exactly.
+TEST(Protocol, RoundTripPreservesCommand) {
+    // A New limit order.
+    Command newcmd{CommandType::New,
+        Order{42, Side::Buy, OrderType::Limit, 1234, 99, 42}, 0};
+    Command back = deserialize(serialize(newcmd));
+    EXPECT_EQ(back.type, CommandType::New);
+    EXPECT_EQ(back.order.id, 42u);
+    EXPECT_EQ(back.order.side, Side::Buy);
+    EXPECT_EQ(back.order.type, OrderType::Limit);
+    EXPECT_EQ(back.order.price, 1234);
+    EXPECT_EQ(back.order.quantity, 99u);
+
+    // A Cancel.
+    Command cancel{CommandType::Cancel, {}, 7};
+    Command cback = deserialize(serialize(cancel));
+    EXPECT_EQ(cback.type, CommandType::Cancel);
+    EXPECT_EQ(cback.target_id, 7u);
+
+    // A Modify (target id + new price/qty).
+    Command modify{CommandType::Modify,
+        Order{0, Side::Sell, OrderType::Limit, 555, 12, 0}, 9};
+    Command mback = deserialize(serialize(modify));
+    EXPECT_EQ(mback.type, CommandType::Modify);
+    EXPECT_EQ(mback.target_id, 9u);
+    EXPECT_EQ(mback.order.price, 555);
+    EXPECT_EQ(mback.order.quantity, 12u);
 }
