@@ -65,3 +65,9 @@ ctest --test-dir build --output-on-failure
 - Differential tests: the optimized engine produces identical output to a simple
   reference implementation across 20k random operations — proving optimizations
   preserved behavior exactly.
+
+  ## Networking 
+- TCP server (raw POSIX sockets) accepts a client, reads fixed-size 32-byte
+  binary command messages, feeds them to the matching engine, and replies.
+- Binary wire protocol with serialize/deserialize, verified by a round-trip test.
+- Separate client process submits orders over the network; full path proven end to end.
