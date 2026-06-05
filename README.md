@@ -71,3 +71,9 @@ ctest --test-dir build --output-on-failure
   binary command messages, feeds them to the matching engine, and replies.
 - Binary wire protocol with serialize/deserialize, verified by a round-trip test.
 - Separate client process submits orders over the network; full path proven end to end.
+
+## Live market data 
+- Single-threaded select()-based server multiplexes many connections at once.
+- Connections declare a role (order submitter or market-data subscriber).
+- After each order, the server broadcasts top-of-book (best bid/ask + sizes)
+  to all subscribers, who display the book updating live.
