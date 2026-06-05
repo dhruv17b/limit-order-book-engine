@@ -55,3 +55,47 @@ inline Command deserialize(const WireBytes& buf) {
 
     return cmd;
 }
+
+// Sanity-check a decoded command. Returns true if it's plausible enough to process.
+// Rejects garbage from malformed/hostile input before it reaches the engine.
+inline bool is_valid(const Command& cmd) {
+    // Command type must be one of the known values.
+    if (cmd.type != CommandType::New &&
+        cmd.type != CommandType::Cancel &&
+        cmd.type != CommandType::Modify)
+        return false;
+
+    // For New, the order fields must be sane.
+    if (cmd.type == CommandType::New) {
+        // Side must be Buy or Sell.
+        if (cmd.order.side != Side::Buy && cmd.order.side != Side::Sell)
+            return false;
+        // Order type must be one of the known values.
+        if (cmd.order.type != OrderType::Limit &&
+            cmd.order.type != OrderType::Market &&
+            cmd.order.type != OrderType::IOC &&
+            cmd.order.type != OrderType::FOK)
+            return false;
+        // Quantity must be positive and not absurd.
+        if (cmd.order.quantity == 0 || cmd.order.quantity > 1'000'000'000ull)
+            return false;
+        // Price must be positive and within a sane range.
+        if (cmd.order.price <= 0 || cmd.order.price > 1'000'000'000ll)
+            return false;
+        // Order id must be within a reasonable range (protects the flat index).
+        if (cmd.order.id == 0 || cmd.order.id > 100'000'000ull)
+            return false;
+    } else {
+        // Cancel / Modify: target id must be reasonable.
+        if (cmd.target_id == 0 || cmd.target_id > 100'000'000ull)
+            return false;
+        // For Modify, also check the new price/quantity.
+        if (cmd.type == CommandType::Modify) {
+            if (cmd.order.quantity == 0 || cmd.order.quantity > 1'000'000'000ull)
+                return false;
+            if (cmd.order.price <= 0 || cmd.order.price > 1'000'000'000ll)
+                return false;
+        }
+    }
+    return true;
+}

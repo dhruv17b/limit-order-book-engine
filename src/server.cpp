@@ -102,6 +102,11 @@ int main() {
             }
 
             Command cmd = deserialize(buf);
+            if (!is_valid(cmd)) {
+                uint8_t reply = 0;          // reject: zero events
+                write(fd, &reply, 1);
+                continue;                    // skip applying garbage
+            }
             std::vector<Event> events = book.apply(cmd);
             uint8_t reply = (uint8_t)events.size();
             write(fd, &reply, 1);

@@ -285,3 +285,21 @@ TEST(Protocol, RoundTripPreservesCommand) {
     EXPECT_EQ(mback.order.price, 555);
     EXPECT_EQ(mback.order.quantity, 12u);
 }
+
+// Fuzz: feed random/malformed 32-byte messages through deserialize + apply.
+// The engine must never crash, regardless of input.
+TEST(Fuzz, RandomBytesDoNotCrash) {
+    std::mt19937 rng(13579);
+    std::uniform_int_distribution<int> byte_d(0, 255);
+
+    OrderBook book;
+    for (int iter = 0; iter < 100000; ++iter) {
+        WireBytes buf;
+        for (auto& b : buf) b = (uint8_t)byte_d(rng);
+
+        Command cmd = deserialize(buf);
+        if (is_valid(cmd))      // only apply plausible commands
+            book.apply(cmd);
+    }
+    SUCCEED();
+}
