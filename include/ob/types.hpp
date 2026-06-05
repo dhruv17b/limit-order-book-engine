@@ -34,4 +34,13 @@ struct Event {
     EventType type;
     Trade     trade;     // meaningful only when type == Trade
     uint64_t  order_id;  // the order this event is about
+    
 };
+inline bool operator==(const Event& a, const Event& b) {
+    return a.type == b.type
+        && a.order_id == b.order_id
+        && a.trade.maker_order_id == b.trade.maker_order_id
+        && a.trade.taker_order_id == b.trade.taker_order_id
+        && a.trade.price == b.trade.price
+        && a.trade.quantity == b.trade.quantity;
+}

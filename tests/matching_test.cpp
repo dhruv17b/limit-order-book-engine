@@ -2,6 +2,7 @@
 #include "ob/order_book.hpp"
 #include<random>
 #include "ob/order_pool.hpp"
+#include "ob/simple_order_book.hpp"
 
 // Scenario: rest a sell of 10 @ 100, then a sell of 5 @ 101.
 // Send a buy of 12 @ 101. Expect:
@@ -202,5 +203,55 @@ TEST(Property, InvariantsHoldUnderRandomCommands) {
 
         // After EVERY command, the world must be consistent.
         ASSERT_TRUE(book.check_invariants()) << "Invariant broke at step " << step;
+    }
+}
+
+// Differential test: the optimized engine must behave identically to the
+// simple reference engine on every command of a random stream.
+TEST(Differential, OptimizedMatchesReference) {
+    std::mt19937 rng(98765);
+    std::uniform_int_distribution<int>      side_d(0, 1);
+    std::uniform_int_distribution<int64_t>  price_d(95, 105);
+    std::uniform_int_distribution<uint64_t> qty_d(1, 10);
+    std::uniform_int_distribution<int>      action_d(0, 4); // 0-2 new, 3 cancel, 4 modify
+
+    OrderBook       fast;       // your optimized engine
+    SimpleOrderBook reference;  // the naive, trusted engine
+
+    uint64_t next_id = 1;
+    std::vector<uint64_t> seen_ids;
+
+    for (int step = 0; step < 20000; ++step) {
+        Command cmd{};
+        int action = action_d(rng);
+
+        if (action == 3 && !seen_ids.empty()) {
+            cmd = Command{CommandType::Cancel, {},
+                          seen_ids[rng() % seen_ids.size()]};
+        } else if (action == 4 && !seen_ids.empty()) {
+            cmd = Command{CommandType::Modify,
+                          Order{0, Side::Buy, OrderType::Limit,
+                                price_d(rng), qty_d(rng), 0},
+                          seen_ids[rng() % seen_ids.size()]};
+        } else {
+            uint64_t id = next_id++;
+            Side side = side_d(rng) ? Side::Buy : Side::Sell;
+            cmd = Command{CommandType::New,
+                          Order{id, side, OrderType::Limit,
+                                price_d(rng), qty_d(rng), id}, 0};
+            seen_ids.push_back(id);
+        }
+
+        // Feed the SAME command to both engines.
+        std::vector<Event> ev_fast = fast.apply(cmd);
+        std::vector<Event> ev_ref  = reference.apply(cmd);
+
+        // They must agree, event for event.
+        ASSERT_EQ(ev_fast.size(), ev_ref.size())
+            << "Event count differs at step " << step;
+        for (size_t i = 0; i < ev_fast.size(); ++i) {
+            ASSERT_TRUE(ev_fast[i] == ev_ref[i])
+                << "Event " << i << " differs at step " << step;
+        }
     }
 }
