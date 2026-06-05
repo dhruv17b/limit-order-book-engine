@@ -49,6 +49,9 @@ ctest --test-dir build --output-on-failure
 - Flat array index (replacing std::unordered_map): ~2.2M → ~8M commands/sec
   at 10M-command scale (best of stable runs). Removed per-op hashing and
   catastrophic rehash stalls. Tradeoff: index memory grows with id range.
+- Object pool for orders + pre-reserved flat index: throughput unchanged (~8M/sec),
+  but latency tail flattened sharply — p99.9 ~24us → ~2us, worst-case max ~137ms → ~few ms,
+  by eliminating per-order allocation and index-vector resize stalls.
 
 ## Profiled bottlenecks(Current phase)
 - cancel_order is the hottest function (~28% self time) under cancel-heavy flow.
