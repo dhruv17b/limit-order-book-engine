@@ -1,75 +1,91 @@
 #include <cstdio>
 #include <cstring>
-#include <cstdlib>
-#include <unistd.h>          // read, write, close
-#include <arpa/inet.h>       // sockaddr_in, htons
-#include <sys/socket.h>      // socket, bind, listen, accept
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <vector>
+#include <algorithm>
 #include "ob/order_book.hpp"
 #include "ob/protocol.hpp"
 
 constexpr int PORT = 9001;
 
 int main() {
-    // 1. socket(): create a TCP socket.
-    //    AF_INET = IPv4, SOCK_STREAM = TCP (a reliable byte stream).
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) { perror("socket"); return 1; }
-
-    // Allow quick reuse of the port if we restart the server (avoids "address in use").
     int opt = 1;
     setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // 2. bind(): attach the socket to PORT on all local interfaces.
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;      // accept connections to any local IP
-    addr.sin_port = htons(PORT);            // htons: host-to-network byte order for the port
-    if (bind(listen_fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("bind"); return 1;
-    }
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(PORT);
+    if (bind(listen_fd, (sockaddr*)&addr, sizeof(addr)) < 0) { perror("bind"); return 1; }
+    if (listen(listen_fd, 8) < 0) { perror("listen"); return 1; }
+    printf("Server listening on port %d (select-based)...\n", PORT);
 
-    // 3. listen(): start accepting connections (backlog of 1 pending).
-    if (listen(listen_fd, 1) < 0) { perror("listen"); return 1; }
-    printf("Server listening on port %d...\n", PORT);
+    OrderBook book;
+    std::vector<int> clients;        // connected order-submitter sockets
 
-    OrderBook book;   // created ONCE, persists across all clients
-
-    // Outer loop: serve clients one after another, forever.
     while (true) {
-        // accept(): block until a client connects.
-        int client_fd = accept(listen_fd, nullptr, nullptr);
-        if (client_fd < 0) { perror("accept"); continue; }
-        printf("Client connected.\n");
+        // 1. Build the read set fresh each iteration.
+        fd_set readset;
+        FD_ZERO(&readset);
+        FD_SET(listen_fd, &readset);
+        int maxfd = listen_fd;
+        for (int fd : clients) {
+            FD_SET(fd, &readset);
+            if (fd > maxfd) maxfd = fd;
+        }
 
-        uint64_t commands_handled = 0;
+        // 2. Block until any socket is ready.
+        int ready = select(maxfd + 1, &readset, nullptr, nullptr, nullptr);
+        if (ready < 0) { perror("select"); break; }
 
-        // Inner loop: read commands from THIS client until it disconnects.
-        WireBytes buf;
-        while (true) {
+        // 3a. New connection waiting on the listening socket?
+        if (FD_ISSET(listen_fd, &readset)) {
+            int client_fd = accept(listen_fd, nullptr, nullptr);
+            if (client_fd >= 0) {
+                clients.push_back(client_fd);
+                printf("Client connected (fd %d). Total: %zu\n",
+                       client_fd, clients.size());
+            }
+        }
+
+        // 3b. Check each connected client for incoming data.
+        //     Iterate over a copy of indices so we can remove safely.
+        std::vector<int> to_remove;
+        for (int fd : clients) {
+            if (!FD_ISSET(fd, &readset)) continue;
+
+            // Read exactly one 32-byte command (framing loop).
+            WireBytes buf;
             size_t got = 0;
             bool disconnected = false;
             while (got < WIRE_SIZE) {
-                ssize_t n = read(client_fd, buf.data() + got, WIRE_SIZE - got);
+                ssize_t n = read(fd, buf.data() + got, WIRE_SIZE - got);
                 if (n <= 0) { disconnected = true; break; }
                 got += n;
             }
-            if (disconnected) break;
+            if (disconnected) {
+                printf("Client (fd %d) disconnected.\n", fd);
+                close(fd);
+                to_remove.push_back(fd);
+                continue;
+            }
 
             Command cmd = deserialize(buf);
             std::vector<Event> events = book.apply(cmd);
-            commands_handled++;
-
             uint8_t reply = (uint8_t)events.size();
-            write(client_fd, &reply, 1);
+            write(fd, &reply, 1);
         }
 
-        printf("Client disconnected. Handled %llu commands this session.\n",
-               (unsigned long long)commands_handled);
-        close(client_fd);
-        // Loop back to accept() the next client. The book persists.
+        // 4. Remove any disconnected clients from the list.
+        for (int fd : to_remove)
+            clients.erase(std::remove(clients.begin(), clients.end(), fd), clients.end());
     }
 
-    // (unreachable in practice — server runs until Ctrl+C)
     close(listen_fd);
     return 0;
 }
