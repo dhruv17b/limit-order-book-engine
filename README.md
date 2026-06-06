@@ -1,79 +1,55 @@
 # Limit Order Book Matching Engine
 
-A from-scratch limit order book and matching engine in C++, built to understand
-how exchanges match orders and to practice low-latency systems design.
+A from-scratch, low-latency limit order book and matching engine in C++, with a
+binary network protocol and a live market-data feed. Built to understand how
+electronic exchanges work — from the matching core out to the network layer.
 
-## Status (Till now)
-- Limit orders with price-time priority matching (both sides)
-- Market orders (fill at any price, no resting remainder)
-- IOC (immediate-or-cancel): fills what it can, drops the rest
-- FOK (fill-or-kill): fully fills or does nothing, via a pre-trade liquidity check
-- Cancel by order id, backed by an order-id index for fast lookup
-- Modify (cancel + re-add; loses time priority, as a real venue would)
-- Command-in / event-out interface (`apply`): the engine as a deterministic state machine
-- Replay driver: reconstructs book state by replaying a command file
-- Property tests: thousands of random command sequences verify invariants hold
+## What it does
+- Matches orders by **price-time priority** (best price first, then oldest first).
+- Supports limit, market, IOC (immediate-or-cancel), and FOK (fill-or-kill) orders,
+  plus cancel and modify.
+- Exposes a **command-in / event-out** interface, making the core a deterministic
+  state machine.
+- Runs as a **TCP server** clients connect to over a compact binary protocol.
+- Broadcasts a **live market-data feed** (top-of-book) to subscribers in real time.
 
-## Design notes
-- Prices are stored as integer ticks, never floating point, to avoid rounding errors.
-- A trade executes at the resting (maker) order's price; price improvement goes to the taker.
-- The book uses two sorted maps (bids high-to-low, asks low-to-high), each price
-  level holding a FIFO list of orders so the oldest at a price fills first.
-- An order-id index maps each resting order to its exact list position. The invariant:
-  an order's index entry exists exactly while it rests, and is removed the instant it
-  leaves the book — whether by fill or cancel. (Property tests enforce this.)
-- The engine is deterministic: same commands in the same order produce the same events
-  and the same final book. This is what makes replay-based recovery possible.
-- This structure is correct-first, not fast; Week 4 replaces it for performance.
+## Performance
+Measured on a single thread, Release build (10M mixed commands):
+- ~8 million commands/sec throughput.
+- Latency per command: p50 ~150 ns, p99.9 ~2 µs after optimization.
+- Optimized from a naive baseline via profiling — see the design notes for the
+  before/after and the reasoning.
 
-## Build and test
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-
-## Replay a command file
-./build/replay commands.txt
-
-## Performance baseline (naive std::map/std::list)
-- ~9.3 million commands/sec throughput (1M mixed new+cancel commands, Release build, single thread)
-- Measured before any optimization; The next phase targets improving this.
-- Latency per command (same run): p50 120 ns, p99 721 ns, p99.9 2483 ns, max ~2.1 ms
-- The large p50→tail spread points to heap allocation stalls — the next phase target.
-
-## Optimization log
-- Replaced the order-id index (std::unordered_map) with a flat array indexed
-  directly by order id. At 10M-command scale this improved throughput from
-  ~2.2M to ~8M commands/sec (best of stable runs), and removed the large
-  latency stalls caused by hash-table rehashing as the book grew to ~180k
-  resting orders. Tradeoff: index memory now grows with the order-id range.
-- Flat array index (replacing std::unordered_map): ~2.2M → ~8M commands/sec
-  at 10M-command scale (best of stable runs). Removed per-op hashing and
-  catastrophic rehash stalls. Tradeoff: index memory grows with id range.
-- Object pool for orders + pre-reserved flat index: throughput unchanged (~8M/sec),
-  but latency tail flattened sharply — p99.9 ~24us → ~2us, worst-case max ~137ms → ~few ms,
-  by eliminating per-order allocation and index-vector resize stalls.
-
-## Profiled bottlenecks(Current phase)
-- cancel_order is the hottest function (~28% self time) under cancel-heavy flow.
-- Dominated by std::unordered_map (the order-id index) lookups/erases.
-- Per-command std::vector<Event> allocation is a second major cost.
-- These are the next phase optimization targets.
-
-## Verification
-- Example tests for specific matching scenarios.
-- Property tests: invariants hold across thousands of random command sequences.
-- Differential tests: the optimized engine produces identical output to a simple
+## Verified three ways
+- **Example tests** for specific matching scenarios.
+- **Property tests**: invariants (no crossed book, consistent index) hold across
+  thousands of random command sequences.
+- **Differential tests**: the optimized engine produces identical output to a simple
   reference implementation across 20k random operations — proving optimizations
-  preserved behavior exactly.
+  preserved behavior.
+- **Fuzz tests**: 100k random/malformed messages, hardened with input validation.
 
-  ## Networking 
-- TCP server (raw POSIX sockets) accepts a client, reads fixed-size 32-byte
-  binary command messages, feeds them to the matching engine, and replies.
-- Binary wire protocol with serialize/deserialize, verified by a round-trip test.
-- Separate client process submits orders over the network; full path proven end to end.
+## Architecture
+[command client] --orders--> [TCP server: select() multiplexing] --> [matching engine]
+                                       |                                      |
+[subscriber] <----- live top-of-book feed <----------------------------------+
 
-## Live market data 
-- Single-threaded select()-based server multiplexes many connections at once.
-- Connections declare a role (order submitter or market-data subscriber).
-- After each order, the server broadcasts top-of-book (best bid/ask + sizes)
-  to all subscribers, who display the book updating live.
+- Single-threaded `select()`-based server multiplexes many connections at once.
+- Connections declare a role: order submitter or market-data subscriber.
+- 32-byte fixed binary wire protocol (see design notes for the format).
+
+## Build and run
+cmake -S . -B build && cmake --build build
+ctest --test-dir build --output-on-failure        # run the test suite
+Run the live demo (three terminals):
+./build/server         # terminal 1: the exchange
+./build/subscriber     # terminal 2: watch the book update live
+./build/client         # terminal 3: send orders
+
+## Design decisions and limitations
+See [DESIGN.md](DESIGN.md) for the engineering decisions, optimization story,
+and honest limitations.
+
+## Status
+Built over 2 weeks as a learning project: correct engine → full order types →
+benchmarked → optimized → verified → networked → live feed → hardened.
