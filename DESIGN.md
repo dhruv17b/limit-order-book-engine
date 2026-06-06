@@ -46,6 +46,13 @@ the index grew to ~180k live entries. Profiling (`perf`) showed the bottleneck w
 the cancel path dominated by the `unordered_map` index plus per-command allocation —
 **not** the matching loop, which was the surprising and instructive finding.
 
+Over the network, with a synchronous request-reply client (send one order, wait for
+its ack, repeat), throughput is ~6,000 orders/sec — roughly 166 µs per round trip.
+This is bounded by network/syscall round-trip latency, not the engine (which matches
+in ~125 ns); the synchronous pattern pays a full round trip per order. Pipelining
+requests (sending without waiting for each ack) and batching would close most of the
+gap — the engine itself is far from the bottleneck here.
+
 Two changes, each measured:
 
 1. **Flat array index** (replacing `unordered_map`): order ids are sequential, so an
