@@ -440,3 +440,43 @@ TEST(Raft, ReplicatesAndCommits) {
     for (auto& n : nodes)
         EXPECT_EQ(n.commit_index(), 3u) << "node " << n.id() << " commit index";
 }
+
+// The payoff: commands agreed via Raft are applied identically on every replica,
+// so all replicas' order books converge to the same state.
+TEST(Raft, ReplicasConvergeToIdenticalBooks) {
+    const int N = 3;
+    MessageBus bus;
+    std::vector<RaftNode> nodes;
+    for (int i = 0; i < N; ++i) nodes.emplace_back(i, N);
+
+    // Elect a leader.
+    for (int step = 0; step < 50; ++step) simulate_step(nodes, bus);
+    int leader = -1;
+    for (auto& n : nodes) if (n.is_leader()) leader = n.id();
+    ASSERT_NE(leader, -1);
+
+    // Propose a small trading scenario to the leader.
+    nodes[leader].propose(Command{CommandType::New,
+        Order{1, Side::Sell, OrderType::Limit, 100, 10, 1}, 0});
+    nodes[leader].propose(Command{CommandType::New,
+        Order{2, Side::Sell, OrderType::Limit, 101, 5, 2}, 0});
+    nodes[leader].propose(Command{CommandType::New,
+        Order{3, Side::Buy, OrderType::Limit, 101, 12, 3}, 0});
+
+    // Run the cluster so the commands replicate, commit, and apply everywhere.
+    for (int step = 0; step < 80; ++step) simulate_step(nodes, bus);
+
+    // Every replica must have applied all 3 commands...
+    for (auto& n : nodes)
+        EXPECT_EQ(n.last_applied(), 3u) << "node " << n.id();
+
+    // ...and reached an IDENTICAL order book (compare top-of-book).
+    auto ref = nodes[0].engine_top();
+    for (auto& n : nodes) {
+        auto t = n.engine_top();
+        EXPECT_EQ(t.best_bid, ref.best_bid) << "node " << n.id() << " bid price";
+        EXPECT_EQ(t.bid_qty,  ref.bid_qty)  << "node " << n.id() << " bid qty";
+        EXPECT_EQ(t.best_ask, ref.best_ask) << "node " << n.id() << " ask price";
+        EXPECT_EQ(t.ask_qty,  ref.ask_qty)  << "node " << n.id() << " ask qty";
+    }
+}

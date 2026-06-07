@@ -3,6 +3,7 @@
 #include <vector>
 #include "ob/types.hpp"   // reuse your Command type for log entries
 #include <cstdlib>
+#include "ob/order_book.hpp"
 
 enum class RaftRole { Follower, Candidate, Leader };
 
@@ -55,6 +56,8 @@ public:
     size_t log_size() const { return log_.size(); }
     uint64_t commit_index() const { return commit_index_; }
     bool is_leader() const { return role_ == RaftRole::Leader; }
+    OrderBook::TopOfBook engine_top() const { return engine_.top_of_book(); }
+    uint64_t last_applied() const { return last_applied_; }
 
     RaftNode(int id, int cluster_size)
         : id_(id), cluster_size_(cluster_size) {
@@ -227,10 +230,12 @@ public:
             break;
         }
         }
+        apply_committed();
         return out;
         }
 
 private:
+    OrderBook engine_;   // this replica's state machine
     std::vector<Message> start_election() {
         current_term_++;
         role_ = RaftRole::Candidate;
@@ -249,6 +254,7 @@ private:
             m.last_log_term  = log_.empty() ? 0 : log_.back().term;
             out.push_back(m);
         }
+           // reconcile engine with any newly-committed entries
         return out;
     }
 
@@ -294,6 +300,15 @@ private:
     void reset_election_timer() {
         election_elapsed_ = 0;
         election_timeout_ = 10 + (rand() % 11);
+    }
+
+    // Feed any newly-committed log entries into the engine, in order.
+    void apply_committed() {
+        while (last_applied_ < commit_index_) {
+            last_applied_++;
+            const Command& cmd = log_[last_applied_ - 1].command;  // 1-based -> 0-based
+            engine_.apply(cmd);
+        }
     }
 
     int id_;
