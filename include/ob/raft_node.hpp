@@ -44,6 +44,18 @@ struct Message {
 
 class RaftNode {
 public:
+    // A client proposes a command to the leader. Only the leader accepts it;
+    // it appends to its own log (replication happens via AppendEntries on ticks).
+    // Returns true if accepted (we are the leader).
+    bool propose(const Command& cmd) {
+        if (role_ != RaftRole::Leader) return false;
+        log_.push_back(LogEntry{current_term_, cmd});
+        return true;
+    }
+    size_t log_size() const { return log_.size(); }
+    uint64_t commit_index() const { return commit_index_; }
+    bool is_leader() const { return role_ == RaftRole::Leader; }
+    
     RaftNode(int id, int cluster_size)
         : id_(id), cluster_size_(cluster_size) {
             reset_election_timer();

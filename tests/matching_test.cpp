@@ -382,3 +382,28 @@ TEST(Raft, ReelectsAfterLeaderCrash) {
     EXPECT_GT(nodes[new_leader_id].current_term(), old_term)
         << "new leader should be in a later term";
 }
+
+// Only a leader accepts proposed commands, appending them to its log.
+TEST(Raft, LeaderAcceptsProposals) {
+    const int N = 3;
+    MessageBus bus;
+    std::vector<RaftNode> nodes;
+    for (int i = 0; i < N; ++i) nodes.emplace_back(i, N);
+
+    // Elect a leader.
+    for (int step = 0; step < 50; ++step) simulate_step(nodes, bus);
+
+    int leader = -1;
+    for (auto& n : nodes) if (n.is_leader()) leader = n.id();
+    ASSERT_NE(leader, -1);
+
+    // Leader accepts a proposal; its log grows by one.
+    size_t before = nodes[leader].log_size();
+    Command cmd{CommandType::New, Order{1, Side::Buy, OrderType::Limit, 100, 10, 1}, 0};
+    EXPECT_TRUE(nodes[leader].propose(cmd));
+    EXPECT_EQ(nodes[leader].log_size(), before + 1);
+
+    // A follower rejects the proposal (it's not the leader).
+    int follower = (leader + 1) % N;
+    EXPECT_FALSE(nodes[follower].propose(cmd));
+}
