@@ -349,3 +349,36 @@ TEST(Raft, ElectsALeader) {
     for (auto& node : nodes)
         EXPECT_EQ(node.current_term(), term) << "terms should converge";
 }
+
+// If the leader crashes, the cluster must elect a new one.
+TEST(Raft, ReelectsAfterLeaderCrash) {
+    const int N = 3;
+    MessageBus bus;
+    std::vector<RaftNode> nodes;
+    for (int i = 0; i < N; ++i) nodes.emplace_back(i, N);
+
+    // Elect an initial leader.
+    for (int step = 0; step < 50; ++step) simulate_step(nodes, bus);
+
+    int leader_id = -1;
+    for (auto& node : nodes)
+        if (node.role() == RaftRole::Leader) leader_id = node.id();
+    ASSERT_NE(leader_id, -1) << "should have a leader first";
+    uint64_t old_term = nodes[leader_id].current_term();
+
+    // Crash the leader.
+    bus.crash(leader_id);
+
+    // Run more steps; a surviving follower should time out and win a new term.
+    for (int step = 0; step < 100; ++step) simulate_step(nodes, bus);
+
+    int new_leaders = 0, new_leader_id = -1;
+    for (auto& node : nodes) {
+        if (bus.is_crashed(node.id())) continue;
+        if (node.role() == RaftRole::Leader) { new_leaders++; new_leader_id = node.id(); }
+    }
+    EXPECT_EQ(new_leaders, 1) << "a new leader should emerge among survivors";
+    EXPECT_NE(new_leader_id, leader_id) << "new leader should differ from crashed one";
+    EXPECT_GT(nodes[new_leader_id].current_term(), old_term)
+        << "new leader should be in a later term";
+}
