@@ -55,7 +55,7 @@ public:
     size_t log_size() const { return log_.size(); }
     uint64_t commit_index() const { return commit_index_; }
     bool is_leader() const { return role_ == RaftRole::Leader; }
-    
+
     RaftNode(int id, int cluster_size)
         : id_(id), cluster_size_(cluster_size) {
             reset_election_timer();
@@ -133,8 +133,7 @@ public:
                     votes_received_++;
                     // Majority? Become leader.
                     if (votes_received_ > cluster_size_ / 2) {
-                        role_ = RaftRole::Leader;
-                        heartbeat_elapsed_ = HEARTBEAT_INTERVAL;  // send heartbeats soon
+                        become_leader();
                     }
                 }
             }
@@ -205,6 +204,14 @@ private:
         return out;
     }
 
+    void become_leader() {
+        role_ = RaftRole::Leader;
+        heartbeat_elapsed_ = HEARTBEAT_INTERVAL;   // trigger heartbeats soon
+        // Optimistically assume every follower is caught up to our log end.
+        next_index_.assign(cluster_size_, log_.size() + 1);
+        match_index_.assign(cluster_size_, 0);
+    }
+
     void reset_election_timer() {
         election_elapsed_ = 0;
         election_timeout_ = 10 + (rand() % 11);
@@ -220,6 +227,8 @@ private:
     int votes_received_ = 0;
     int heartbeat_elapsed_ = 0;
     static constexpr int HEARTBEAT_INTERVAL = 3;
+    std::vector<uint64_t> next_index_;   // per-follower: next log index to send
+    std::vector<uint64_t> match_index_;  // per-follower: highest confirmed index
 
     // --- volatile state ---
     uint64_t commit_index_ = 0;
