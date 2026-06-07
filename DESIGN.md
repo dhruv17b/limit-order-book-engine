@@ -82,6 +82,29 @@ Two changes, each measured:
 - **Live market-data feed**: after each order, the server broadcasts top-of-book (best
   bid/ask and sizes) to all subscribers, who display the book updating in real time.
 
+  ## Replication (Raft consensus)
+A single matching engine is a single point of failure — if it dies, the market dies.
+Real exchanges run replicas: multiple copies processing the same commands in the same
+order, with one leader and automatic failover. The determinism of the matching core
+(same ordered commands → same state) is exactly what makes replicas converge.
+
+Raft is implemented to provide that ordered, agreed-upon command log across nodes:
+- **Leader election**: nodes are followers, candidates, or leaders; terms act as a
+  logical clock; randomized election timeouts avoid split votes; a majority of votes
+  elects a leader. If the leader stops sending heartbeats, a follower times out and a
+  new election (in a higher term) produces a new leader.
+- **Log replication**: the leader appends each command to its log and replicates it via
+  AppendEntries; an entry is committed once a majority of nodes hold it, then applied to
+  each replica's engine. An AppendEntries consistency check (prevLogIndex/prevLogTerm)
+  and per-follower nextIndex/matchIndex bookkeeping repair lagging or divergent logs.
+- **Result**: commands agreed by consensus are applied identically on every replica, so
+  all replicas reach the same order book — a fault-tolerant exchange.
+
+Implementation choice: Raft runs as nodes-as-objects in a single process, communicating
+through a controllable in-memory message bus. This makes failure scenarios (message loss,
+leader crash) deterministic and testable — the cluster is driven by an explicit "tick"
+simulation rather than wall-clock time, so consensus behavior is fully reproducible.
+
 ## Verification strategy
 Correctness is checked in four complementary layers, each catching what the others miss:
 - **Example tests** pin down specific scenarios (a crossing buy, a partial fill, time
@@ -102,14 +125,18 @@ index-resize crash on a malformed order id found by fuzzing — fixed by validat
 commands before they reach the engine.
 
 ## Known limitations
-- The `select()` server still uses a blocking framing read loop, so a client sending a
-  partial message can stall it; fully robust handling needs non-blocking sockets with
-  per-client buffers.
-- The market-data feed is top-of-book only, not full depth.
-- A subscriber joining mid-stream receives no initial snapshot — only updates from when
-  it connected.
-- Single-node only: no journaling/persistence or replication yet.
+- The select() server's framing read loop still blocks on a partial message; fully
+  robust handling needs non-blocking sockets with per-client buffers.
+- The market-data feed is top-of-book only, not full depth; a subscriber joining
+  mid-stream gets no initial snapshot.
 - The wire protocol assumes same-endianness between client and server.
+- Raft runs as a single-process simulation, not across real networked machines; it
+  also has no log compaction/snapshots (the log grows unbounded) and does not yet
+  persist state to disk across a real crash.
+- The networked server and the Raft layer are not yet integrated end to end — the
+  engine, the network gateway, and the consensus layer are each demonstrated, but
+  wiring client orders through Raft to the replicated engines over real sockets is
+  future work.
 
 ## Possible future work
 - Full-depth market data with an initial snapshot for new subscribers.
