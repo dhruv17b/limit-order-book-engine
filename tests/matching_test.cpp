@@ -4,12 +4,33 @@
 #include "ob/order_pool.hpp"
 #include "ob/simple_order_book.hpp"
 #include "ob/protocol.hpp"
+#include "ob/message_bus.hpp"
 
 // Scenario: rest a sell of 10 @ 100, then a sell of 5 @ 101.
 // Send a buy of 12 @ 101. Expect:
 //   trade 10 @ 100 (maker = first sell)
 //   trade  2 @ 101 (maker = second sell)
 // Buy is fully filled; 3 remain resting at 101 on the ask side.
+
+// Drives a cluster of RaftNodes through one "tick" of simulated time:
+// tick every node, then deliver all resulting messages (which may produce more).
+inline void simulate_step(std::vector<RaftNode>& nodes, MessageBus& bus) {
+    // 1. Tick every node; collect the messages they emit.
+    for (auto& node : nodes) {
+        if (bus.is_crashed(node.id())) continue;   // crashed nodes don't tick
+        for (const Message& m : node.tick())
+            bus.send(m);
+    }
+    // 2. Deliver every queued message, feeding replies back into the bus,
+    //    until the queue drains (messages can cascade: vote -> reply -> ...).
+    Message m;
+    while (bus.pop(m)) {
+        if (bus.is_crashed(m.to)) continue;
+        for (const Message& reply : nodes[m.to].handle_message(m))
+            bus.send(reply);
+    }
+}
+
 TEST(Matching, CrossesAsksByPriceTimePriority) {
     OrderBook book;
 
@@ -302,4 +323,29 @@ TEST(Fuzz, RandomBytesDoNotCrash) {
             book.apply(cmd);
     }
     SUCCEED();
+}
+
+// A 3-node cluster should elect exactly one leader.
+TEST(Raft, ElectsALeader) {
+    const int N = 3;
+    MessageBus bus;
+    std::vector<RaftNode> nodes;
+    for (int i = 0; i < N; ++i)
+        nodes.emplace_back(i, N);
+
+    // Run enough steps for an election timeout to fire and resolve.
+    for (int step = 0; step < 50; ++step)
+        simulate_step(nodes, bus);
+
+    // Count leaders. There must be exactly one.
+    int leaders = 0;
+    for (auto& node : nodes)
+        if (node.role() == RaftRole::Leader) leaders++;
+
+    EXPECT_EQ(leaders, 1) << "expected exactly one leader";
+
+    // All nodes should agree on the same term.
+    uint64_t term = nodes[0].current_term();
+    for (auto& node : nodes)
+        EXPECT_EQ(node.current_term(), term) << "terms should converge";
 }
