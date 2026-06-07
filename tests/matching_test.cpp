@@ -407,3 +407,36 @@ TEST(Raft, LeaderAcceptsProposals) {
     int follower = (leader + 1) % N;
     EXPECT_FALSE(nodes[follower].propose(cmd));
 }
+
+// A command proposed to the leader should replicate to all followers' logs
+// and become committed across the cluster.
+TEST(Raft, ReplicatesAndCommits) {
+    const int N = 3;
+    MessageBus bus;
+    std::vector<RaftNode> nodes;
+    for (int i = 0; i < N; ++i) nodes.emplace_back(i, N);
+
+    // Elect a leader.
+    for (int step = 0; step < 50; ++step) simulate_step(nodes, bus);
+    int leader = -1;
+    for (auto& n : nodes) if (n.is_leader()) leader = n.id();
+    ASSERT_NE(leader, -1);
+
+    // Propose three commands to the leader.
+    for (int i = 1; i <= 3; ++i) {
+        Command c{CommandType::New,
+            Order{(uint64_t)i, Side::Buy, OrderType::Limit, 100, 10, (uint64_t)i}, 0};
+        ASSERT_TRUE(nodes[leader].propose(c));
+    }
+
+    // Run steps so heartbeats carry the entries and replies come back.
+    for (int step = 0; step < 50; ++step) simulate_step(nodes, bus);
+
+    // Every node's log should now hold all three entries.
+    for (auto& n : nodes)
+        EXPECT_EQ(n.log_size(), 3u) << "node " << n.id() << " log size";
+
+    // And all three should be committed everywhere.
+    for (auto& n : nodes)
+        EXPECT_EQ(n.commit_index(), 3u) << "node " << n.id() << " commit index";
+}

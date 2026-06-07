@@ -73,7 +73,7 @@ public:
             heartbeat_elapsed_++;
             if (heartbeat_elapsed_ >= HEARTBEAT_INTERVAL) {
                 heartbeat_elapsed_ = 0;
-                out = make_heartbeats();    // send AppendEntries to all followers
+                out = make_append_entries();    // send AppendEntries to all followers
             }
             return out;
         }
@@ -142,31 +142,93 @@ public:
 
         case MsgType::AppendEntries: {
             bool success = false;
-            // A valid leader for our term (or newer): accept, stay/become follower.
+
+            // Reject outright if the leader's term is stale.
             if (msg.term >= current_term_) {
                 role_ = RaftRole::Follower;
-                reset_election_timer();   // heard from leader: don't start an election
-                success = true;
-                // (Log handling goes here in the replication phase — heartbeat for now.)
+                reset_election_timer();        // heard from a valid leader
+
+                // Consistency check: do we have a matching entry at prev_log_index?
+                bool log_ok;
+                if (msg.prev_log_index == 0) {
+                    log_ok = true;             // leader is sending from the very start
+                } else if (msg.prev_log_index <= log_.size()) {
+                    // entry exists; does its term match?
+                    log_ok = (log_[msg.prev_log_index - 1].term == msg.prev_log_term);
+                } else {
+                    log_ok = false;            // we don't even have that entry yet
+                }
+
+                if (log_ok) {
+                    success = true;
+
+                    // Append the new entries, overwriting any conflicting tail.
+                    uint64_t idx = msg.prev_log_index;   // last index we agree on
+                    for (const LogEntry& e : msg.entries) {
+                        idx++;
+                        if (idx <= log_.size()) {
+                            // Existing entry here — if it conflicts, truncate from here.
+                            if (log_[idx - 1].term != e.term) {
+                                log_.resize(idx - 1);     // drop conflicting tail
+                                log_.push_back(e);
+                            }
+                            // else: identical entry already present, skip.
+                        } else {
+                            log_.push_back(e);            // new entry, append
+                        }
+                    }
+
+                    // Advance commit index toward the leader's (apply happens later).
+                    if (msg.leader_commit > commit_index_) {
+                        uint64_t last_new = msg.prev_log_index + msg.entries.size();
+                        commit_index_ = std::min(msg.leader_commit, last_new);
+                    }
+                }
             }
+
             Message reply;
             reply.type = MsgType::AppendEntriesReply;
             reply.from = id_;
             reply.to   = msg.from;
             reply.term = current_term_;
             reply.success = success;
+            // Tell the leader how much of our log is now good (for nextIndex/matchIndex).
+            reply.last_log_index = log_.size();
             out.push_back(reply);
             break;
         }
 
         case MsgType::AppendEntriesReply: {
-            // Leader bookkeeping for log replication — handled in the next phase.
+            // Only the leader processes these, and only for the current term.
+            if (role_ == RaftRole::Leader && msg.term == current_term_) {
+                if (msg.success) {
+                    // Follower accepted: record how much it now has.
+                    match_index_[msg.from] = msg.last_log_index;
+                    next_index_[msg.from]  = msg.last_log_index + 1;
+
+                    // Can we commit anything new? An entry is committed once a
+                    // majority of nodes have it (and it's from our current term).
+                    for (uint64_t n = commit_index_ + 1; n <= log_.size(); ++n) {
+                        if (log_[n - 1].term != current_term_) continue;  // safety rule
+                        int count = 1;                       // count ourselves
+                        for (int peer = 0; peer < cluster_size_; ++peer) {
+                            if (peer == id_) continue;
+                            if (match_index_[peer] >= n) count++;
+                        }
+                        if (count > cluster_size_ / 2)
+                            commit_index_ = n;               // majority has it -> commit
+                    }
+                } else {
+                    // Follower rejected: our prevLog didn't match. Back up and retry.
+                    if (next_index_[msg.from] > 1)
+                        next_index_[msg.from]--;
+                }
+            }
             break;
         }
         }
-
         return out;
-    }
+        }
 
 private:
     std::vector<Message> start_election() {
@@ -190,15 +252,32 @@ private:
         return out;
     }
 
-    std::vector<Message> make_heartbeats() {
+    // Build AppendEntries for every follower, carrying whatever entries each
+    // one still needs (based on next_index_). Empty entries act as a heartbeat.
+    std::vector<Message> make_append_entries() {
         std::vector<Message> out;
         for (int peer = 0; peer < cluster_size_; ++peer) {
             if (peer == id_) continue;
+
+            uint64_t ni = next_index_[peer];          // next index to send this peer
+            uint64_t prev_index = ni - 1;             // entry just before it
+            uint64_t prev_term = 0;
+            if (prev_index > 0 && prev_index <= log_.size())
+                prev_term = log_[prev_index - 1].term; // log_ is 0-based; index is 1-based
+
             Message m;
             m.type = MsgType::AppendEntries;
             m.from = id_;
             m.to   = peer;
             m.term = current_term_;
+            m.prev_log_index = prev_index;
+            m.prev_log_term  = prev_term;
+            m.leader_commit  = commit_index_;
+
+            // Attach all entries from ni to the end of our log.
+            for (uint64_t i = ni; i <= log_.size(); ++i)
+                m.entries.push_back(log_[i - 1]);     // 1-based index -> 0-based vector
+
             out.push_back(m);
         }
         return out;
